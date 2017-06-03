@@ -1,6 +1,7 @@
 package sni
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"fmt"
@@ -165,5 +166,50 @@ func TestGetHello(t *testing.T) {
 func BenchmarkGetHello(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		getHello(hello)
+	}
+}
+
+func tryHello(i int, malformed []byte, t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("%d: panic detected", i)
+			if err, ok := r.(error); ok {
+				t.Errorf("%d: %s", i, err)
+			}
+		}
+	}()
+	reader := bytes.NewReader(malformed)
+	bufferedReader := bufio.NewReader(reader)
+	c := bufferedConn{bufferedReader, nil, nil}
+	if _, _, err := ServerNameFromConn(c); err == nil {
+		t.Errorf("%d: expected error", i)
+	}
+}
+
+func TestMalformedHello(t *testing.T) {
+	badSessionIdLength := hello
+	badSessionIdLength[5+38] = 0xff
+
+	badCipherSuiteLength := hello
+	badCipherSuiteLength[5+39] = 0xff
+
+	badCompressionMethodLength := hello
+	badCompressionMethodLength[5+73] = 0xff
+
+	badNameLength := hello
+	badNameLength[5+84] = 0xff
+
+	malformedHellos := [][]byte{
+		hello,
+		[]byte{0x16, 0x03, 0x01, 0x00, 0x00, 0x01},
+		[]byte{0x16, 0x03, 0x01, 0x00, 0x01, 0x01, 0x00},
+		badSessionIdLength,
+		badCipherSuiteLength,
+		badCompressionMethodLength,
+		badNameLength,
+	}
+
+	for i, malformed := range malformedHellos {
+		tryHello(i, malformed, t)
 	}
 }
