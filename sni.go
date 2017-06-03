@@ -29,8 +29,15 @@ func (b bufferedConn) Read(p []byte) (int, error) {
 	return b.r.Read(p)
 }
 
+var malformedError = errors.New("malformed client hello")
+
 func getHello(b []byte) (string, error) {
 	rest := b[5:]
+
+	if len(rest) == 0 {
+		return "", malformedError
+	}
+
 	current := 0
 	handshakeType := rest[0]
 	current += 1
@@ -44,15 +51,27 @@ func getHello(b []byte) (string, error) {
 	current += 2
 	// Skip over random number
 	current += 4 + 28
+
+	if current > len(rest) {
+		return "", malformedError
+	}
+
 	// Skip over session ID
 	sessionIDLength := int(rest[current])
 	current += 1
 	current += sessionIDLength
 
+	if current+1 > len(rest) {
+		return "", malformedError
+	}
+
 	cipherSuiteLength := (int(rest[current]) << 8) + int(rest[current+1])
 	current += 2
 	current += cipherSuiteLength
 
+	if current > len(rest) {
+		return "", malformedError
+	}
 	compressionMethodLength := int(rest[current])
 	current += 1
 	current += compressionMethodLength
@@ -64,7 +83,7 @@ func getHello(b []byte) (string, error) {
 	current += 2
 
 	hostname := ""
-	for current < len(rest) && hostname == "" {
+	for current+4 < len(rest) && hostname == "" {
 		extensionType := (int(rest[current]) << 8) + int(rest[current+1])
 		current += 2
 
@@ -75,14 +94,23 @@ func getHello(b []byte) (string, error) {
 
 			// Skip over number of names as we're assuming there's just one
 			current += 2
+			if current > len(rest) {
+				return "", malformedError
+			}
 
 			nameType := rest[current]
 			current += 1
 			if nameType != 0 {
 				return "", errors.New("Not a hostname")
 			}
+			if current+1 > len(rest) {
+				return "", malformedError
+			}
 			nameLen := (int(rest[current]) << 8) + int(rest[current+1])
 			current += 2
+			if current+nameLen > len(rest) {
+				return "", malformedError
+			}
 			hostname = string(rest[current : current+nameLen])
 		}
 
