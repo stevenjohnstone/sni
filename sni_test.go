@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"testing"
 )
 
@@ -39,17 +38,18 @@ D2lWusoe2/nEqfDVVWGWlyJ7yOmqaVm/iNUN9B2N2g==
 `
 
 func TestSNI(t *testing.T) {
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
+	proceed := make(chan bool)
+
 	go func() {
 		l, err := net.Listen("tcp", ":3000")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer l.Close()
-		wg.Done()
-		wg.Add(1)
-		defer wg.Done()
+		proceed <- true
+		defer func() {
+			proceed <- true
+		}()
 		conn, err := l.Accept()
 		if err != nil {
 			return
@@ -65,12 +65,12 @@ func TestSNI(t *testing.T) {
 		}
 		return
 	}()
-	wg.Wait()
+	<-proceed
 	_, err := tls.Dial("tcp", "localhost:3000", nil)
 	if err != nil && err != io.EOF {
 		t.Fatal(err)
 	}
-	wg.Wait()
+	<-proceed
 }
 
 func TestBuffConn(t *testing.T) {
